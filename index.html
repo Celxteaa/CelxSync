@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CelxSync</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <style>
+        body { background: linear-gradient(135deg, #020617 0%, #0f172a 100%); font-family: system-ui, sans-serif; }
+        .glass { background: rgba(255, 255, 255, 0.02); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
+    </style>
+</head>
+<body class="text-slate-200 min-h-screen p-4 md:p-8 flex flex-col justify-between">
+
+    <!-- Header & Room Controller -->
+    <header class="w-full max-w-6xl mx-auto glass rounded-2xl p-5 flex flex-wrap justify-between items-center gap-4 shadow-2xl">
+        <div>
+            <h1 class="text-xl font-bold text-indigo-400 flex items-center gap-2">
+                <i class="fa-solid fa-circle-nodes animate-pulse"></i> CelxSync 
+            </h1>
+            <p class="text-xs text-slate-400">Bagikan link ruang ini untuk terhubung massal jarak jauh</p>
+        </div>
+
+        <!-- Room Inputs -->
+        <div class="flex flex-wrap items-center gap-3 text-xs font-mono">
+            <div class="bg-slate-950/80 px-3 py-2 rounded-xl border border-slate-800 flex items-center gap-2">
+                <span class="text-slate-500">NAMA RUANG:</span>
+                <input id="room-input" type="text" value="ruang-demo" class="bg-transparent text-indigo-400 font-bold focus:outline-none w-28">
+            </div>
+            <button id="btn-join" onclick="joinRoom()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2 rounded-xl transition">
+                <i class="fa-solid fa-door-open"></i> MASUK / BUAT RUANG
+            </button>
+            <button id="btn-share" onclick="copyRoomLink()" disabled class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-xl transition opacity-40">
+                <i class="fa-solid fa-share-nodes"></i> SALIN LINK
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace Grid -->
+    <main class="w-full max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6 flex-grow my-6">
+        
+        <!-- Left Column: Room Members & File Logs -->
+        <div class="flex flex-col gap-6">
+            <!-- Peer List -->
+            <div class="glass rounded-2xl p-5 shadow-lg flex flex-col h-48">
+                <h2 class="font-bold text-sm text-slate-300 mb-2 flex justify-between">
+                    <span>Anggota Terhubung</span>
+                    <span id="member-count" class="text-indigo-400 font-mono">[0]</span>
+                </h2>
+                <div id="peer-list" class="overflow-y-auto flex-grow space-y-1.5 text-xs font-mono text-slate-400">
+                    <div class="italic text-slate-600">Belum masuk ke ruangan...</div>
+                </div>
+            </div>
+
+            <!-- Global Chat / Info Grid -->
+            <div class="glass rounded-2xl p-5 shadow-lg flex flex-col flex-grow justify-between min-h-[200px]">
+                <h2 class="font-bold text-sm text-slate-300 mb-2">Terminal Notifikasi Jaringan</h2>
+                <div id="mesh-log" class="overflow-y-auto flex-grow text-[11px] font-mono text-slate-500 space-y-1 pr-2 max-h-48">
+                    [SYSTEM]: Masukkan nama ruang di atas untuk mengaktifkan matriks mesh.
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Broadcaster and Multi-File Pipeline -->
+        <div class="lg:col-span-2 flex flex-col gap-6">
+            
+            <!-- File Dispatcher -->
+            <div class="glass rounded-2xl p-5 shadow-lg">
+                <h2 class="font-bold text-sm text-slate-300 mb-1">Kirim File ke Semua Orang Sekaligus</h2>
+                <p class="text-xs text-slate-400 mb-3">File akan dapat diakses seluruh anggota di dalam ruangan.</p>
+                
+                <label class="border-2 border-dashed border-slate-800 hover:border-indigo-500/40 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer bg-slate-950/40 transition group">
+                    <i class="fa-solid fa-paper-plane text-2xl text-slate-600 group-hover:text-indigo-400 mb-1"></i>
+                    <span class="text-xs text-slate-300">Pilih File untuk Di-broadcast</span>
+                    <input type="file" id="file-input" onchange="broadcastFile()" class="hidden" disabled>
+                </label>
+
+                <div class="mt-4">
+                    <div id="file-log" class="max-h-24 overflow-y-auto space-y-2 text-xs font-mono"></div>
+                </div>
+            </div>
+
+            <!-- Mass Stream Box -->
+            <div class="glass rounded-2xl p-5 shadow-lg flex-grow flex flex-col justify-between">
+                <div>
+                    <h2 class="font-bold text-sm text-slate-300 mb-1">Live Multi-Stream Receiver</h2>
+                    <p class="text-xs text-slate-400 mb-3">Jika salah satu anggota membagikan layarnya, siaran akan muncul disini.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-center mt-2">
+                    <div class="bg-slate-950 aspect-video rounded-xl border border-slate-800 relative flex items-center justify-center overflow-hidden">
+                        <video id="remote-video" autoplay playsinline class="w-full h-full object-contain"></video>
+                        <div class="absolute top-2 left-2 bg-slate-900/80 px-2 py-0.5 rounded text-[10px] font-mono text-slate-400 border border-slate-700">MONITOR</div>
+                    </div>
+                    
+                    <div class="flex flex-col gap-2">
+                        <button id="btn-stream" onclick="startMeshStream()" disabled class="w-full bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-600 hover:text-white transition flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-desktop"></i> Broadcast Layar Saya
+                        </button>
+                        <button id="btn-stop" onclick="stopMeshStream()" disabled class="w-full bg-red-600/20 text-red-400 border border-red-500/30 py-2.5 rounded-xl text-xs font-bold hover:bg-red-600 hover:text-white transition flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-circle-stop"></i> Hentikan Siaran
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        let myPeerId = null;
+        let peer = null;
+        let currentRoom = "";
+        let connections = {}; // Menyimpan list data koneksi aktif ke semua orang
+        let activeCalls = [];
+        let myStream = null;
+
+        // Auto-read Room Name dari URL Link jika ada (Contoh: index.html?room=ruang-mabar)
+        window.onload = () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const roomParam = urlParams.get('room');
+            if (roomParam) {
+                document.getElementById('room-input').value = roomParam;
+                // Beri jeda sedikit agar inisialisasi peer selesai
+                setTimeout(joinRoom, 1000);
+            }
+        };
+
+        function joinRoom() {
+            const roomName = document.getElementById('room-input').value.trim();
+            if (!roomName) return alert("Masukkan nama ruangan!");
+            
+            currentRoom = roomName;
+            logMesh(`Mencoba masuk ke ruang: [${roomName}]...`);
+
+            // Membuat ID unik kita sendiri berdasarkan nama ruangan agar mudah dicari oleh sesama anggota
+            // Format: namaruang___randomangka
+            myPeerId = roomName + "___" + Math.floor(100000 + Math.random() * 900000);
+
+            if(peer) peer.destroy();
+
+            peer = new Peer(myPeerId, { debug: 1 });
+
+            peer.on('open', (id) => {
+                logMesh(`Anda berhasil masuk ruang sebagai NODE_${id.split('___')[1]}`);
+                document.getElementById('btn-share').disabled = false;
+                document.getElementById('btn-share').classList.remove('opacity-40');
+                document.getElementById('file-input').disabled = false;
+                document.getElementById('btn-stream').disabled = false;
+                
+                // Pindai apakah sudah ada orang lain di dalam ruangan ini
+                discoverAndConnectPeers();
+            });
+
+            // Handle jika ada orang BARU yang mengontak kita
+            peer.on('connection', (conn) => {
+                setupConnectionHandlers(conn);
+            });
+
+            // Handle jika ada kiriman video streaming masuk
+            peer.on('call', (call) => {
+                call.answer();
+                call.on('stream', (remoteStream) => {
+                    document.getElementById('remote-video').srcObject = remoteStream;
+                });
+                activeCalls.push(call);
+            });
+        }
+
+        // Fungsi Inti Penyekenan Jaringan Mesh Otomatis
+        // Karena tidak ada backend, kita manfaatkan mekanisme brute force list/mencari peer aktif di server publik PeerJS
+        function discoverAndConnectPeers() {
+            // Mengambil daftar semua peer yang aktif di server publik cloud
+            peer.listAllPeers((allPeers) => {
+                let count = 0;
+                allPeers.forEach((peerId) => {
+                    // Jika ID-nya punya awalan nama ruangan yang sama, tapi bukan diri kita sendiri
+                    if (peerId.startsWith(currentRoom + "___") && peerId !== myPeerId) {
+                        if (!connections[peerId]) {
+                            logMesh(`Menemukan teman, menyambungkan ke NODE_${peerId.split('___')[1]}...`);
+                            let conn = peer.connect(peerId);
+                            setupConnectionHandlers(conn);
+                            count++;
+                        }
+                    }
+                });
+                updatePeerListUI();
+            });
+        }
+
+        function setupConnectionHandlers(conn) {
+            connections[conn.peer] = conn;
+
+            conn.on('open', () => {
+                logMesh(`Terhubung ke NODE_${conn.peer.split('___')[1]}`);
+                updatePeerListUI();
+                
+                // Kirim sinyal ping balik agar dia mendata kita juga
+                conn.send({ type: 'handshake' });
+            });
+
+            conn.on('data', (data) => {
+                if (data.type === 'handshake') {
+                    // Otomatis simpan data balik jika belum terdata
+                    if(!connections[conn.peer]) {
+                        connections[conn.peer] = conn;
+                        updatePeerListUI();
+                    }
+                } else if (data.type === 'file') {
+                    handleIncomingFile(data);
+                }
+            });
+
+            conn.on('close', () => {
+                logMesh(`NODE_${conn.peer.split('___')[1]} keluar dari ruangan.`);
+                delete connections[conn.peer];
+                updatePeerListUI();
+            });
+        }
+
+        // Mengirim File ke SEMUA koneksi aktif sekaligus (Looping Jaringan Mesh)
+        function broadcastFile() {
+            const fileInput = document.getElementById('file-input');
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const log = document.getElementById('file-log');
+            log.innerHTML = `<div class="text-amber-400 animate-pulse"><i class="fa-solid fa-spinner animate-spin"></i> Memancarkan "${file.name}" ke seluruh mesh...</div>` + log.innerHTML;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const targetPeers = Object.keys(connections);
+                
+                if(targetPeers.length === 0) {
+                    log.innerHTML = `<div class="text-red-400">Gagal Kirim: Tidak ada orang lain di ruangan ini.</div>` + log.innerHTML;
+                    return;
+                }
+
+                // Loop kirim ke semua orang
+                targetPeers.forEach((peerId) => {
+                    connections[peerId].send({
+                        type: 'file',
+                        fileData: e.target.result,
+                        fileName: file.name,
+                        fileType: file.type,
+                        sender: myPeerId.split('___')[1]
+                    });
+                });
+
+                log.innerHTML = `<div class="text-emerald-400 font-bold"><i class="fa-solid fa-check-double"></i> Berhasil disiarkan ke ${targetPeers.length} orang!</div>` + log.innerHTML;
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function handleIncomingFile(data) {
+            const log = document.getElementById('file-log');
+            const blob = new Blob([data.fileData], { type: data.fileType });
+            const url = URL.createObjectURL(blob);
+            
+            log.innerHTML = `<div class="bg-slate-900/90 p-2.5 rounded-xl border border-indigo-500/20 flex justify-between items-center">
+                <span class="truncate pr-2 text-slate-300"><i class="fa-solid fa-arrow-down-long text-indigo-400 mr-1"></i> Dari Node_${data.sender}: <b>${data.fileName}</b></span>
+                <a href="${url}" download="${data.fileName}" class="bg-indigo-500 text-slate-950 px-3 py-1 rounded-lg text-[10px] font-bold tracking-wider hover:bg-indigo-400 transition">UNDUH</a>
+            </div>` + log.innerHTML;
+        }
+
+        // Broadcast Layar ke Seluruh Jaringan Mesh Room
+        async function startMeshStream() {
+            try {
+                myStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                const targetPeers = Object.keys(connections);
+                
+                targetPeers.forEach((peerId) => {
+                    let call = peer.call(peerId, myStream);
+                    activeCalls.push(call);
+                });
+
+                document.getElementById('btn-stop').disabled = false;
+                document.getElementById('btn-stream').disabled = true;
+                logMesh("Siaran layar Anda sedang dipancarkan ke seluruh anggota.");
+            } catch (err) {
+                console.error(err);
+                logMesh("Gagal memulai broadcast layar.");
+            }
+        }
+
+        function stopMeshStream() {
+            if (myStream) myStream.getTracks().forEach(track => track.stop());
+            activeCalls.forEach(call => call.close());
+            activeCalls = [];
+            document.getElementById('btn-stop').disabled = true;
+            document.getElementById('btn-stream').disabled = false;
+            logMesh("Siaran dihentikan.");
+        }
+
+        // Update Tampilan Anggota Kamar
+        function updatePeerListUI() {
+            const list = document.getElementById('peer-list');
+            const keys = Object.keys(connections);
+            document.getElementById('member-count').innerText = `[${keys.length + 1}]`; // +1 adalah diri kita sendiri
+            
+            if (keys.length === 0) {
+                list.innerHTML = `<div class="text-slate-500 italic">Anda sendirian di ruangan ini. Bagikan link ke teman!</div>`;
+                return;
+            }
+
+            list.innerHTML = `<div class="text-emerald-400"><i class="fa-solid fa-circle-user"></i> Anda (Node_${myPeerId.split('___')[1]})</div>`;
+            keys.forEach((key) => {
+                list.innerHTML += `<div class="text-slate-300"><i class="fa-solid fa-user-group text-slate-500"></i> Node_${key.split('___')[1]}</div>`;
+            });
+        }
+
+        function logMesh(text) {
+            const logBox = document.getElementById('mesh-log');
+            const time = new Date().toLocaleTimeString();
+            logBox.innerHTML += `<div>[${time}] ${text}</div>`;
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        // Bikin Link Otomatis Biar Tinggal Diklik Orang Lain
+        function copyRoomLink() {
+            const cleanUrl = window.location.href.split('?')[0];
+            const shareUrl = `${cleanUrl}?room=${encodeURIComponent(currentRoom)}`;
+            navigator.clipboard.writeText(shareUrl);
+            alert(`Link Ruangan Berhasil Disalin!\nKirim link ini ke teman-temanmu agar otomatis masuk ke ruang yang sama.`);
+        }
+    </script>
+</body>
+</html>
